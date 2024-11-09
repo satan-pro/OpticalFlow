@@ -1,21 +1,5 @@
 import numpy as np
 import cv2
-import time
-
-def draw_red_circles_with_opacity(img, points, opacity=0.6, radius=5):
-    """
-    Draw red circles on the image at the specified points with given opacity.
-    """
-    overlay = img.copy()
-    
-    # Draw circles on the overlay
-    for (x, y) in points:
-        cv2.circle(overlay, (x, y), radius, (0, 0, 255), -1)  # Red color (BGR)
-    
-    # Blend the overlay with the original image
-    cv2.addWeighted(overlay, opacity, img, 1 - opacity, 0, img)
-    
-    return img
 
 def draw_hsv_on_gray(img, flow, threshold=1.5):
     h, w = img.shape[:2]
@@ -42,9 +26,27 @@ def draw_hsv_on_gray(img, flow, threshold=1.5):
 
     return blended
 
+def calculate_velocity_direction(flow, cumulative_data):
+    fx, fy = flow[:, :, 0], flow[:, :, 1]
+    velocity = np.sqrt(fx**2 + fy**2)
+    direction = np.arctan2(fy, fx)
+    cumulative_data['total_velocity'] += np.sum(velocity)
+    cumulative_data['total_flow_vectors'] += velocity.size
+    cumulative_data['sin_sum'] += np.sum(np.sin(direction))
+    cumulative_data['cos_sum'] += np.sum(np.cos(direction))
+    return cumulative_data
+
+def compute_average_velocity_direction(cumulative_data):
+    if cumulative_data['total_flow_vectors'] > 0:
+        average_velocity = cumulative_data['total_velocity'] / cumulative_data['total_flow_vectors']
+    else:
+        average_velocity = 0
+    average_direction = np.arctan2(cumulative_data['sin_sum'], cumulative_data['cos_sum'])
+    average_direction_degrees = np.degrees(average_direction)
+    return average_velocity, average_direction_degrees
+
 def dense_optical_flow(video_path):
     cap = cv2.VideoCapture(video_path)
-    
     ret, img = cap.read()
     if not ret:
         print("Error: Could not read the first frame.")
@@ -52,57 +54,39 @@ def dense_optical_flow(video_path):
         return
 
     prevgray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-    max_speed = 0
-    max_frame = None
-    max_speed_points = []
+    cumulative_data = {'total_velocity': 0, 'total_flow_vectors': 0, 'sin_sum': 0, 'cos_sum': 0}
+    last_frame = None  # To hold the last frame processed
 
     while True:
         ret, img = cap.read()
         if not ret:
             break
-        
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-        # Start time to calculate FPS
-        start = time.time()
-
         flow = cv2.calcOpticalFlowFarneback(prevgray, gray, None, 0.5, 3, 15, 3, 5, 1.2, 0)
         prevgray = gray
+        cumulative_data = calculate_velocity_direction(flow, cumulative_data)
 
-        # Calculate speed (magnitude)
-        fx, fy = flow[:,:,0], flow[:,:,1]
-        speed = np.sqrt(fx**2 + fy**2)
-
-        # Get maximum speed and corresponding points
-        max_current_speed = np.max(speed)
-        if max_current_speed > max_speed:
-            max_speed = max_current_speed
-            max_frame = img.copy()  # Store the frame with max speed
-            max_speed_points = np.argwhere(speed > 1.5)  # Points where speed exceeds threshold
-
-        # End time
-        end = time.time()
-        fps = 1 / (end - start)
-
-        # Overlay HSV flow values without rectangles
         hsv_on_gray = draw_hsv_on_gray(gray, flow)
+        cv2.imshow('Optical Flow - Farneback', hsv_on_gray)
+        last_frame = hsv_on_gray  # Store the last frame
 
-        # Draw red circles on the max speed frame
-        if max_frame is not None:
-            final_frame = draw_red_circles_with_opacity(max_frame, max_speed_points, opacity=0.6)
-        
-        # Display the result
-        cv2.imshow('Optical Flow', hsv_on_gray)
-        
         if cv2.waitKey(5) & 0xFF == ord('q'):
             break
 
-    # Show the frame with the highest speed after the video ends
-    if max_frame is not None:
-        final_frame = draw_red_circles_with_opacity(max_frame, max_speed_points, opacity=0.6)
-        cv2.imshow('Frame with Maximum Speed', final_frame)
-        cv2.waitKey(0)
+    average_velocity, average_direction = compute_average_velocity_direction(cumulative_data)
+    print(f"Farneback Average Velocity: {average_velocity:.2f} pixels/frame")
+    print(f"Farneback Average Direction: {average_direction:.2f} degrees")
+
+    # Display the last frame until 'q' is pressed
+    if last_frame is not None:
+        cv2.imshow("Last Frame - Optical Flow", last_frame)
+        print("Displaying the last frame. Press 'q' to close.")
+        while True:
+            if cv2.waitKey(0) & 0xFF == ord('q'):
+                break
 
     cap.release()
     cv2.destroyAllWindows()
+
+if __name__ == "__main__":
+    dense_optical_flow('aerial_cars.mp4')

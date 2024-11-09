@@ -3,6 +3,7 @@ from tkinter import filedialog, messagebox
 import sparseOpticalFlowLK as lucas_kanade
 import denseOpticalFlow as farneback
 import hybridOpticalFlow as hybrid
+import lucas_farneback 
 
 def run_optical_flow(method):
     video_path = filedialog.askopenfilename(title="Select Video", filetypes=[("Video Files", "*.mp4;*.avi;*.mov")])
@@ -15,8 +16,10 @@ def run_optical_flow(method):
         lucas_kanade.lucas_kanade_optical_flow(video_path)
     elif method == "Farneback":
         farneback.dense_optical_flow(video_path)
-    elif method == "Hybrid":
+    elif method == "Hybrid-SPY":
         hybrid.hybrid_optical_flow(video_path)
+    elif method == "Improved Lucas":
+        lucas_farneback.lucas_kanade_optical_flow(video_path)
     else:
         messagebox.showerror("Error", "Invalid optical flow method.")
 
@@ -32,7 +35,10 @@ def create_gui():
     btn_farneback = tk.Button(root, text="Farneback", command=lambda: run_optical_flow("Farneback"), font=("Helvetica", 14))
     btn_farneback.pack(pady=10)
 
-    btn_hybrid = tk.Button(root, text="Hybrid", command=lambda: run_optical_flow("Hybrid"), font=("Helvetica", 14))
+    btn_lucas_farneback = tk.Button(root, text="Improved Lucas", command=lambda: run_optical_flow("Improved Lucas"), font=("Helvetica", 14))
+    btn_lucas_farneback.pack(pady=10)
+
+    btn_hybrid = tk.Button(root, text="Hybrid-SPY", command=lambda: run_optical_flow("Hybrid-SPY"), font=("Helvetica", 14))
     btn_hybrid.pack(pady=10)
 
     root.geometry("400x300")

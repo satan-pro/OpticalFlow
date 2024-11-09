@@ -20,6 +20,17 @@ def compute_average_velocity_direction(cumulative_data):
     average_direction_degrees = np.degrees(average_direction)
     return average_velocity, average_direction_degrees
 
+def calculate_hsv_color(speed, angle):
+    # Map angle to Hue (direction), and speed to Value (brightness)
+    hue = int((angle + np.pi) * 90 / np.pi)  # Map angle to [0, 180] for Hue
+    saturation = 255
+    value = min(255, max(300, int(speed * 30)))  # Scale speed for Value
+    
+    # Create HSV color and convert to BGR for OpenCV display
+    hsv_color = np.array([[[hue, saturation, value]]], dtype=np.uint8)
+    bgr_color = cv2.cvtColor(hsv_color, cv2.COLOR_HSV2BGR)[0][0]
+    return tuple(int(c) for c in bgr_color)  # Convert to tuple for OpenCV line drawing
+
 def lucas_kanade_optical_flow(video_path):
     lk_params = dict(winSize=(15, 15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
     feature_params = dict(maxCorners=100, qualityLevel=0.3, minDistance=7, blockSize=7)
@@ -51,19 +62,30 @@ def lucas_kanade_optical_flow(video_path):
                 for i, (new, old) in enumerate(zip(good_new, good_old)):
                     a, b = new.ravel()
                     c, d = old.ravel()
-                    speed = np.sqrt((a - c) ** 2 + (b - d) ** 2)
+                    
+                    # Calculate speed and angle
+                    dx, dy = a - c, b - d
+                    speed = np.sqrt(dx**2 + dy**2)
+                    angle = np.arctan2(dy, dx)
+                    
+                    # Update cumulative data for average velocity and direction
                     cumulative_data['total_velocity'] += speed
                     cumulative_data['total_flow_vectors'] += 1
-                    angle = np.arctan2(b - d, a - c)
                     cumulative_data['sin_sum'] += np.sin(angle)
                     cumulative_data['cos_sum'] += np.cos(angle)
                     
-                    mask = cv2.line(mask, (int(a), int(b)), (int(c), int(d)), (0, 255, 0), 2)
+                    # Get dynamic color based on angle and speed
+                    color = calculate_hsv_color(speed, angle)
+                    
+                    # Draw line with dynamic color
+                    mask = cv2.line(mask, (int(a), int(b)), (int(c), int(d)), color, 2)
                     frame = cv2.circle(frame, (int(a), int(b)), 5, (0, 0, 255), -1)
+                
+                # Update points for the next frame
                 p0 = good_new.reshape(-1, 1, 2)
 
         img = cv2.add(frame, mask)
-        cv2.imshow("Lucas-Kanade Optical Flow", img)
+        cv2.imshow("Lucas-Kanade Optical Flow with HSV Color Lines", img)
         last_frame = img.copy()  # Update the last frame with the current display frame
         
         if cv2.waitKey(30) & 0xFF == ord('q'):
@@ -77,7 +99,7 @@ def lucas_kanade_optical_flow(video_path):
 
     # Display the last frame until 'q' is pressed
     if last_frame is not None:
-        cv2.imshow("Last Frame - Lucas-Kanade Optical Flow", last_frame)
+        cv2.imshow("Last Frame - Lucas-Kanade Optical Flow with HSV Color Lines", last_frame)
         while True:
             if cv2.waitKey(0) & 0xFF == ord('q'):
                 break
